@@ -18,35 +18,39 @@ def encode_domain_name(domain_name: str) -> bytes:
     
     encoded_bytes += b'\x00' # root terminator
 
-    if output_length := len(encoded_bytes) > 255:
+    if (output_length := len(encoded_bytes)) > 255:
         raise ValueError(f'Domain cannot be longer than 255 octects, currently {output_length} octects')
     
     return encoded_bytes
 
 def decode_domain_name(reader: io.BytesIO, depth: int = 0) -> str:
-    if depth > 15:
-        raise ValueError('Reached maximum recursion depth, likely compression loop')
+    if depth > 10:
+        raise ValueError('Reached maximum recursion depth, likely pointer loop')
     
     labels = []
     while True:
-        label = reader.read(1)
+        byte1 = reader.read(1)
 
-        if not label or label == b'\x00':
+        if not byte1 or byte1 == b'\x00':
             break
 
-        if (label[0] & 0xC0) == 0xC0: # bit mask using 0xC0 = 11000000
-            offset_byte = reader.read(1)
-            offset = offset_byte[0]
+        if (byte1[0] & 0xC0) == 0xC0: # bit mask using 0xC0 = 11000000
+            byte2 = reader.read(1)
+            offset = ((byte1[0] & 0x3F) << 8) | byte2[0] # calculate two byte offset: first strip away 11 flag using & 0x3F, then combine first byte with second byte for full offset
             current_position = reader.tell()
 
             reader.seek(offset)
-            res = decode_domain_name(reader, depth+1) # recursively call for compression pointers
+            res = decode_domain_name(reader, depth+1) # recursively call for pointers
             reader.seek(current_position)
 
             labels.append(res)
             break
         else:
-            length = label[0]
+            length = byte1[0]
+
+            if length > 63: # each label cannot be longer than 63 octets - RFC 1035
+                raise ValueError(f'Label cannot be longer than 63 octets, currently {length} octects')
+            
             result_label = reader.read(length)
             ascii_label = result_label.decode('ascii')
             labels.append(ascii_label)
