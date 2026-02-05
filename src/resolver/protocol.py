@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import struct
-from dataclasses import dataclass, astuple
+from typing import Self
+from dataclasses import dataclass
+from abc import ABC, abstractmethod
 
 def encode_domain_name(domain_name: str) -> bytes:
     encoded_bytes = b''
@@ -61,6 +63,16 @@ def decode_domain_name(reader: io.BytesIO, depth: int = 0) -> str:
             labels.append(ascii_label)
     return '.'.join(labels)
 
+class Serializable(ABC):
+    @abstractmethod
+    def to_bytes(self) -> bytes:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def from_bytes(cls, reader: io.BytesIO) -> Self:
+        pass
+
 @dataclass
 class DNSHeaderFlags:
     # flags: 2 bytes combined
@@ -98,7 +110,7 @@ class DNSHeaderFlags:
         return DNSHeaderFlags(qr, opcode, aa, tc, rd, ra, z, rcode)
 
 @dataclass
-class DNSHeader:
+class DNSHeader(Serializable):
     id: int                 # transaction id: 2 bytes
     flags: DNSHeaderFlags
     qd_count: int           # question record: 2 bytes
@@ -120,17 +132,37 @@ class DNSHeader:
     @classmethod
     def from_bytes(cls, reader: io.BytesIO) -> DNSHeader:
         header_bytes = reader.read(12) # DNS header is 12 bytes long - RFC 1035
+
         unpacked_header = struct.unpack('!6H', header_bytes)
         id, flags_raw, qd_count, an_count, ns_count, ar_count = unpacked_header
+
         flags = DNSHeaderFlags.unpack_flags(flags_raw)
+        
         return DNSHeader(id, flags, qd_count, an_count, ns_count, ar_count)
 
-class DNSQuestion:
+@dataclass
+class DNSQuestion(Serializable):
+    qname: str
+    qtype: int
+    qclass: int
+
+    def to_bytes(self) -> bytes:
+        encoded_qname = encode_domain_name(self.qname)
+        encoded_qtype_qclass = struct.pack('!HH', self.qtype, self.qclass)
+        return encoded_qname + encoded_qtype_qclass
+    
+    @classmethod
+    def from_bytes(cls, reader: io.BytesIO) -> DNSQuestion:
+        qname = decode_domain_name(reader)
+
+        question_bytes = reader.read(4)
+        qtype, qclass = struct.unpack('!HH', question_bytes)
+
+        return DNSQuestion(qname, qtype, qclass)
+
+class DNSRecord(Serializable):
     ...
 
-class DNSRecord:
-    ...
-
-class DNSPacket:
+class DNSPacket(Serializable):
     ...
 
