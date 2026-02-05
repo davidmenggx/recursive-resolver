@@ -1,7 +1,7 @@
 import io
 import pytest
 
-from resolver.protocol import encode_domain_name, decode_domain_name
+from resolver.protocol import encode_domain_name, decode_domain_name, DNSHeaderFlags, DNSHeader
 
 # Encoder tests:
 def test_successful_encode():
@@ -57,3 +57,69 @@ def test_single_label_decode():
     expected = 'www'
 
     assert decode_domain_name(buffer) == expected
+
+# DNSHeaderFlags tests:
+@pytest.mark.parametrize('qr,opcode,rcode,expected', [
+    (1, 0, 0, 0x8000),
+    (0, 4, 0, 0x2000),
+    (0, 0, 3, 0x0003),
+])
+def test_valid_flag_pack(qr, opcode, rcode, expected):
+    f = DNSHeaderFlags(qr=qr, opcode=opcode, rcode=rcode)
+    assert f.pack_flags() == expected
+
+@pytest.mark.parametrize('raw_int,expected', [
+    (0x8000, DNSHeaderFlags(qr=1, opcode=0, rcode=0)),
+    (0x2000, DNSHeaderFlags(qr=0, opcode=4, rcode=0)),
+    (0x0003, DNSHeaderFlags(qr=0, opcode=0, rcode=3))
+])
+def test_valid_flag_unpack(raw_int, expected):
+    assert DNSHeaderFlags.unpack_flags(raw_int=raw_int) == expected # __eq__ is supported because DNSHeaderFlags is a dataclass
+
+# DNSHeader tests:
+def test_valid_message_to_bytes():
+    flags_input = DNSHeaderFlags(qr=0, opcode=0, aa=0, tc=0, rd=1, ra=0, z=0, rcode=0)
+    header = DNSHeader(
+        id=0x1234, 
+        flags=flags_input, 
+        qd_count=1, 
+        an_count=0, 
+        ns_count=0, 
+        ar_count=0
+    )
+    expected_output = b'\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00'
+
+    assert header.to_bytes() == expected_output
+
+def test_valid_message_from_bytes():
+    input = b'\xaa\xaa\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00'
+    buffer = io.BytesIO(input)
+
+    expected_flags = DNSHeaderFlags(qr=1, opcode=0, aa=0, tc=0, rd=1, ra=1, z=0, rcode=0)
+    expected = DNSHeader(
+        id=0xAAAA, 
+        flags=expected_flags, 
+        qd_count=1, 
+        an_count=1, 
+        ns_count=0, 
+        ar_count=0
+    )
+
+    assert DNSHeader.from_bytes(buffer) == expected
+
+def test_valid_long_message_from_bytes():
+    # this input has extraneous bytes at the end that should not be parsed
+    input = b'\xaa\xaa\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00\x01\x00\x01\x00'
+    buffer = io.BytesIO(input)
+
+    expected_flags = DNSHeaderFlags(qr=1, opcode=0, aa=0, tc=0, rd=1, ra=1, z=0, rcode=0)
+    expected = DNSHeader(
+        id=0xAAAA, 
+        flags=expected_flags, 
+        qd_count=1, 
+        an_count=1, 
+        ns_count=0, 
+        ar_count=0
+    )
+
+    assert DNSHeader.from_bytes(buffer) == expected
