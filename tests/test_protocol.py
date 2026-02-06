@@ -1,7 +1,7 @@
 import io
 import pytest
 
-from resolver.protocol import encode_domain_name, decode_domain_name, DNSHeaderFlags, DNSHeader, DNSQuestion
+from resolver.protocol import encode_domain_name, decode_domain_name, DNSHeaderFlags, DNSHeader, DNSQuestion, DNSRecord, DNSPacket
 
 # Encoder tests:
 def test_successful_encode():
@@ -147,3 +147,113 @@ def test_valid_long_question_from_bytes():
     expected = DNSQuestion(qname='www.google.com', qtype=1, qclass=1)
 
     assert DNSQuestion.from_bytes(buffer) == expected
+
+# DNSRecord test:
+def test_valid_record_to_bytes():
+    record = DNSRecord('www.google.com', 1, 1, 300, 4, '8.8.8.8')
+    expected = b'\x03www\x06google\x03com\x00\x00\x01\x00\x01\x00\x00\x01,\x00\x04\x08\x08\x08\x08'
+
+    assert record.to_bytes() == expected
+
+def test_valid_record_from_bytes():
+    input = b'\x03www\x06google\x03com\x00\x00\x01\x00\x01\x00\x00\x01,\x00\x04\x08\x08\x08\x08'
+    buffer = io.BytesIO(input)
+
+    expected = DNSRecord('www.google.com', 1, 1, 300, 4, '8.8.8.8')
+
+    assert DNSRecord.from_bytes(buffer) == expected
+
+# DNSPacket test:
+def test_valid_message_to_bytes():
+    flags = DNSHeaderFlags(qr=1, opcode=0, rd=1, ra=1, rcode=0)
+    header = DNSHeader(43707, flags=flags, qd_count=1, an_count=1)
+    question = DNSQuestion('example.com', 1, 1)
+    answer = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.34')
+    
+    input = DNSPacket(header, questions=[question], answers=[answer])
+
+    expected = b'\xaa\xbb\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01\x07example\x03com\x00\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x5d\xb8\xd8\x22'
+    
+    assert input.to_bytes() == expected
+
+def test_valid_message_from_bytes():
+    input = b'\xaa\xbb\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01\xc0\x0c\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x5d\xb8\xd8\x22'
+    buffer = io.BytesIO(input)
+
+    expected_flags = DNSHeaderFlags(qr=1, opcode=0, rd=1, ra=1, rcode=0)
+    expected_header = DNSHeader(43707, flags=expected_flags, qd_count=1, an_count=1)
+    expected_question = DNSQuestion('example.com', 1, 1)
+    expected_answer = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.34')
+    
+    expected = DNSPacket(expected_header, questions=[expected_question], answers=[expected_answer])
+
+    assert DNSPacket.from_bytes(buffer) == expected
+
+def test_valid_long_message_to_bytes():
+    flags = DNSHeaderFlags(qr=1, opcode=0, rd=1, ra=1, rcode=0)
+    header = DNSHeader(43707, flags=flags, qd_count=1, an_count=2, ns_count=1, ar_count=1)
+    question = DNSQuestion('example.com', 1, 1)
+    answer1 = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.34')
+    answer2 = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.35')
+    authority = DNSRecord(name='example.com', _type=2, _class=1, ttl=86400, rdlength=17, rdata='ns1.example.com')
+    additional = DNSRecord(name='ns1.example.com', _type=1, _class=1, ttl=300, rdlength=4, rdata='10.0.0.1')
+
+    input = DNSPacket(
+        header, 
+        questions=[question],
+        answers=[answer1, answer2],
+        authorities=[authority],
+        additionals=[additional]
+    )
+
+    expected = (
+    # Header
+    b'\xaa\xbb\x81\x80\x00\x01\x00\x02\x00\x01\x00\x01'
+    # Question: example.com
+    b'\x07example\x03com\x00\x00\x01\x00\x01'
+    # Answer 1: example.com -> 93.184.216.34
+    b'\x07example\x03com\x00\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x5d\xb8\xd8\x22'
+    # Answer 2: example.com -> 93.184.216.35
+    b'\x07example\x03com\x00\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x5d\xb8\xd8\x23'
+    # Authority: example.com -> NS ns1.example.com
+    b'\x07example\x03com\x00\x00\x02\x00\x01\x00\x01\x51\x80\x00\x11\x03ns1\x07example\x03com\x00'
+    # Additional: ns1.example.com -> 10.0.0.1
+    b'\x03ns1\x07example\x03com\x00\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x0a\x00\x00\x01'
+    )
+
+    assert input.to_bytes() == expected
+
+def test_valid_long_message_from_bytes():
+    input = (
+    # Header
+    b'\xaa\xbb\x81\x80\x00\x01\x00\x02\x00\x01\x00\x01'
+    # Question: example.com
+    b'\x07example\x03com\x00\x00\x01\x00\x01'
+    # Answer 1: example.com -> 93.184.216.34
+    b'\xc0\x0c\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x5d\xb8\xd8\x22'
+    # Answer 2: example.com -> 93.184.216.35
+    b'\xc0\x0c\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x5d\xb8\xd8\x23'
+    # Authority: example.com -> NS ns1.example.com
+    b'\xc0\x0c\x00\x02\x00\x01\x00\x01\x51\x80\x00\x06\x03ns1\xc0\x0c'
+    # Additional: ns1.example.com -> 10.0.0.1
+    b'\x03ns1\xc0\x0c\x00\x01\x00\x01\x00\x00\x01\x2c\x00\x04\x0a\x00\x00\x01'
+    )
+    buffer = io.BytesIO(input)
+
+    expected_flags = DNSHeaderFlags(qr=1, opcode=0, rd=1, ra=1, rcode=0)
+    expected_header = DNSHeader(43707, flags=expected_flags, qd_count=1, an_count=2, ns_count=1, ar_count=1)
+    expected_question = DNSQuestion('example.com', 1, 1)
+    expected_answer1 = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.34')
+    expected_answer2 = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.35')
+    expected_authority = DNSRecord(name='example.com', _type=2, _class=1, ttl=86400, rdlength=6, rdata='ns1.example.com')
+    expected_additional = DNSRecord(name='ns1.example.com', _type=1, ttl=300, rdlength=4, rdata='10.0.0.1')
+
+    expected = DNSPacket(
+        expected_header, 
+        questions=[expected_question],
+        answers=[expected_answer1, expected_answer2],
+        authorities=[expected_authority],
+        additionals=[expected_additional]
+    )
+
+    assert DNSPacket.from_bytes(buffer) == expected
