@@ -164,8 +164,8 @@ class DNSQuestion(Serializable):
 @dataclass
 class DNSRecord(Serializable):
     name: str
-    _type: int = 1
-    _class: int = 1
+    type_: int = 1
+    class_: int = 1
     ttl: int = 0
     rdlength: int = 4
     rdata: str = '0.0.0.0'
@@ -173,7 +173,7 @@ class DNSRecord(Serializable):
     def to_bytes(self) -> bytes:
         encoded_name = encode_domain_name(self.name)
         
-        match self._type:
+        match self.type_:
             case 1: # check for type A: IPv4 address record
                 encoded_rdata = socket.inet_aton(self.rdata)
             case 2 | 5: # check for type CNAME or NS
@@ -185,7 +185,7 @@ class DNSRecord(Serializable):
         
         encoded_rdlength = len(encoded_rdata)
 
-        packed_middle_fields = struct.pack('!HHIH', self._type, self._class, self.ttl, encoded_rdlength)
+        packed_middle_fields = struct.pack('!HHIH', self.type_, self.class_, self.ttl, encoded_rdlength)
 
         return encoded_name + packed_middle_fields + encoded_rdata
     

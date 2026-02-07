@@ -195,8 +195,8 @@ def test_valid_long_message_to_bytes():
     question = DNSQuestion('example.com', 1, 1)
     answer1 = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.34')
     answer2 = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.35')
-    authority = DNSRecord(name='example.com', _type=2, _class=1, ttl=86400, rdlength=17, rdata='ns1.example.com')
-    additional = DNSRecord(name='ns1.example.com', _type=1, _class=1, ttl=300, rdlength=4, rdata='10.0.0.1')
+    authority = DNSRecord(name='example.com', type_=2, class_=1, ttl=86400, rdlength=17, rdata='ns1.example.com')
+    additional = DNSRecord(name='ns1.example.com', type_=1, class_=1, ttl=300, rdlength=4, rdata='10.0.0.1')
 
     input = DNSPacket(
         header, 
@@ -245,8 +245,8 @@ def test_valid_long_message_from_bytes():
     expected_question = DNSQuestion('example.com', 1, 1)
     expected_answer1 = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.34')
     expected_answer2 = DNSRecord('example.com', 1, 1, 300, 4, '93.184.216.35')
-    expected_authority = DNSRecord(name='example.com', _type=2, _class=1, ttl=86400, rdlength=6, rdata='ns1.example.com')
-    expected_additional = DNSRecord(name='ns1.example.com', _type=1, ttl=300, rdlength=4, rdata='10.0.0.1')
+    expected_authority = DNSRecord(name='example.com', type_=2, class_=1, ttl=86400, rdlength=6, rdata='ns1.example.com')
+    expected_additional = DNSRecord(name='ns1.example.com', type_=1, ttl=300, rdlength=4, rdata='10.0.0.1')
 
     expected = DNSPacket(
         expected_header, 
