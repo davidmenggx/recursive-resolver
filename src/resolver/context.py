@@ -106,7 +106,13 @@ class Context:
         self.original_query.header.flags.rd = 0
         
         upstream_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        original_query = self.original_query.to_bytes()
+        try:
+            original_query = self.original_query.to_bytes()
+        except (ValueError, struct.error, IndexError):
+            self.response = DNSPacket.create_simple_error(self.original_query.header.id, rcode=1)
+            self.finish_resolution()
+            print("Sent Format Error (RCODE 1) to client.")
+            return
 
         try:
             upstream_socket.sendto(original_query, (self.current_nameserver, 53))
