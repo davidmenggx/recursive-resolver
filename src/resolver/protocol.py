@@ -82,7 +82,7 @@ class DNSHeaderFlags:
     aa: int = 0         # authoritative answer: 1 bit
     tc: int = 0         # truncation: 1 bit
     rd: int = 0         # recursion desired: 1 bit
-    ra: int = 0         # recursion available: 1 bit
+    ra: int = 1         # recursion available: 1 bit
     z: int = 0          # reserved, 3 bits
     rcode: int = 0      # response code: 4 bits
 
@@ -264,3 +264,8 @@ class DNSPacket(Serializable):
             additionals.append(DNSRecord.from_bytes(reader))
         
         return DNSPacket(header, questions, answers, authorities, additionals)
+    
+    @classmethod
+    def create_simple_error(cls, transaction_id: int, rcode: int = 1) -> DNSPacket:
+        header = DNSHeader(id=transaction_id, flags=DNSHeaderFlags(qr=1, rcode=rcode))
+        return DNSPacket(header)

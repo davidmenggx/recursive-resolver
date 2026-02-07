@@ -1,5 +1,6 @@
 import io
 import socket
+import struct
 import selectors
 import functools
 
@@ -11,11 +12,23 @@ def handle_new_request(sock: socket.socket, selector: selectors.BaseSelector) ->
         data, addr = sock.recvfrom(512) # Standard limit for DNS packets is 512 bytes - RFC 1035
         if not data:
             return
-
-        dns_message = DNSPacket.from_bytes(io.BytesIO(data))
+    
+        try:
+            dns_message = DNSPacket.from_bytes(io.BytesIO(data))
+        except (ValueError, struct.error, IndexError):
+            print('Request error!')
+            if len(data) >= 2:
+                transaction_id = struct.unpack('!H', data[:2])[0]
+                response = DNSPacket.create_simple_error(transaction_id, rcode=1)
+                response = response.to_bytes()
+                try:
+                    sock.sendto(response, addr)
+                except Exception:
+                    pass
+            return
         
         request_context = Context(selector, sock, addr, dns_message)
-        request_context.process()   
+        request_context.process()
     except BlockingIOError:
         pass
 
