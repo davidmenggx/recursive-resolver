@@ -79,7 +79,7 @@ class Context:
         for record in additional_records:
             if record.type_ == 1:
                 return record.rdata
-        return '' # THIS NEEDS TO SUPPORT NS RECORDS AND IPV6
+        return '' # THIS NEEDS TO SUPPORT NS/CNAME RECORDS AND IPV6
     
     def send_request_upstream(self):
         upstream_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -147,12 +147,3 @@ class Context:
             self.server_sock.sendto(serialized_response, self.client_address)
         except Exception as e:
             print(f'Unexpected failure sending response back to client, dropping packet: {e}')
-        finally:
-            self.cleanup_all_sockets()
-    
-    def cleanup_all_sockets(self) -> None:
-        try:
-            self.sel.unregister(self.server_sock)
-            self.server_sock.close()
-        except Exception:
-            pass
