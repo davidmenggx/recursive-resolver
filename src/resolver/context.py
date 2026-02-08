@@ -18,16 +18,22 @@ class Context:
             client_address: tuple[str, int], 
             original_query: DNSPacket
             ) -> None:
-        
+        # Connection information:
         self.sel: selectors.BaseSelector = sel
         self.server_sock: socket.socket = server_sock
         self.client_address: tuple = client_address
+
+        # Request information:
         self.original_query: DNSPacket = original_query
-        self.response: DNSPacket | None = None
-        self.state = ProcessingState.PROCESSING_MESSAGE
-        self.current_nameserver = '198.41.0.4'
-        self.depth = 0 # maximum recursion depth
         self.client_wants_recursion = (self.original_query.header.flags.rd == 1)
+
+        # Current state:
+        self.state = ProcessingState.PROCESSING_MESSAGE
+        self.response: DNSPacket | None = None
+        self.current_nameserver = '198.41.0.4'
+        self.current_transaction_id = self.original_query.header.id
+        self.depth = 0                      # Prevent infinite loops
+        self.visited_servers = set()        # Prevent infinite loops
 
         self.original_query.header.flags.rd = 0
 
@@ -63,7 +69,7 @@ class Context:
         self.process()
     
     def resolve(self) -> None:
-        if self.depth > 10:
+        if self.depth > 10 or self.current_nameserver in self.visited_servers:
             self.response = DNSPacket.create_simple_error(self.original_query.header.id, rcode=2)
             self.finish_resolution()
             print('ERROR! Maximum recursion depth reached!')
@@ -71,13 +77,19 @@ class Context:
         print('Resolving!')
         # check the cache or forward to server
         if self.response: 
-            if self.response.header.flags.rcode != 0:
+            if self.response.header.flags.rcode == 3: # UPDATE CACHE TOO
+                self.response = DNSPacket.create_simple_error(self.original_query.header.id, rcode=3)
+                self.finish_resolution()
+                print('NXDOMAIN')
+                return
+            
+            elif self.response.header.flags.rcode != 0:
                 self.response = DNSPacket.create_simple_error(self.original_query.header.id, rcode=2)
                 self.finish_resolution()
                 print('ERROR! Server failure!')
                 return
 
-            if self.response.header.an_count > 0 or not self.client_wants_recursion:
+            elif self.response.header.an_count > 0 or not self.client_wants_recursion:
                 self.finish_resolution()
                 print('FOUND!')
                 return
@@ -117,17 +129,26 @@ class Context:
             self.state = ProcessingState.WAITING_FOR_RESPONSE
 
             self.depth += 1
+            self.visited_servers.add(self.current_nameserver)
         except OSError:
+            self.response = DNSPacket.create_simple_error(self.original_query.header.id, rcode=2)
+            self.finish_resolution()
             print('Internal server error')
-            ... # GENERATE INTERNAL SERVER ERROR
-    
+        finally:
+            try:
+                upstream_socket.close()
+            except (NameError, AttributeError):
+                pass
+            
     def send_response(self) -> None:
         response = self.response
         if response:
             response.header.id = self.original_query.header.id
             response = response.to_bytes()
             self.server_sock.sendto(response, self.client_address)
-        # there is an error path here too!
+        else:
+            self.response = DNSPacket.create_simple_error(self.original_query.header.id, rcode=2)
+            self.send_response()
     
     def finish_resolution(self) -> None:
         self.state = ProcessingState.FINISHED
