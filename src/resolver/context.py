@@ -29,6 +29,8 @@ class Context:
         self.depth = 0 # maximum recursion depth
         self.client_wants_recursion = (self.original_query.header.flags.rd == 1)
 
+        self.original_query.header.flags.rd = 0
+
     def process(self):
         match self.state:
             case ProcessingState.PROCESSING_MESSAGE:
@@ -42,7 +44,7 @@ class Context:
         print('New connection!')
         self.sel.unregister(sock)
         
-        data, addr = sock.recvfrom(512) # Standard limit for DNS packets is 512 bytes - RFC 1035
+        data, addr = sock.recvfrom(4096)
 
         sock.close()
 
@@ -75,7 +77,7 @@ class Context:
                 print('ERROR! Server failure!')
                 return
 
-            if self.response.header.an_count > 0:
+            if self.response.header.an_count > 0 or not self.client_wants_recursion:
                 self.finish_resolution()
                 print('FOUND!')
                 return
@@ -91,19 +93,12 @@ class Context:
                     self.response = DNSPacket.create_simple_error(self.original_query.header.id, rcode=2)
                     self.send_response()
                     print("COULDN'T FIND NEXT NAME SERVER")
-                    return # think about what happens here... set the rcode to 2... retry?
-            
+                    return
             else:
                 self.response = DNSPacket.create_simple_error(self.original_query.header.id, rcode=2)
                 self.finish_resolution()
                 print('Server failure')
                 return
-
-        # if not self.client_wants_recursion:
-        #     self.finish_resolution()
-        #     return
-        
-        self.original_query.header.flags.rd = 0
         
         upstream_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:

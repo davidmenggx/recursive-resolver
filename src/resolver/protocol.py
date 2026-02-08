@@ -208,8 +208,6 @@ class DNSRecord(Serializable):
             case 28 if rdlength == 16: # check for type AAAA: IPv6 address record
                 raw_rdata = reader.read(rdlength)
                 rdata = socket.inet_ntop(socket.AF_INET6, raw_rdata)
-            case 41:
-                rdata = str(reader.read(rdlength))
             case _:
                 raw_rdata = reader.read(rdlength)
                 rdata = raw_rdata.hex()
