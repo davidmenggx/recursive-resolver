@@ -19,17 +19,15 @@ def handle_new_request(sock: socket.socket, selector: selectors.BaseSelector) ->
             print('Request error!')
             if len(data) >= 2:
                 transaction_id = struct.unpack('!H', data[:2])[0]
-                response = DNSPacket.create_simple_error(transaction_id, rcode=1)
+                response = DNSPacket.create_error(transaction_id, rcode=1)
                 response = response.to_bytes()
-                try:
-                    sock.sendto(response, addr)
-                except Exception:
-                    pass
+                sock.sendto(response, addr)
             return
         
         request_context = Context(selector, sock, addr, dns_message)
         request_context.process()
-    except BlockingIOError:
+    except Exception:
+        print('Unexpected exception, quietly dropping packet')
         pass
 
 def main(ip: str = '127.0.0.1', port: int = 8053):
@@ -39,21 +37,21 @@ def main(ip: str = '127.0.0.1', port: int = 8053):
     try:
         server_socket.bind((ip, port))
     except OSError as e:
-        raise RuntimeError(f"Failed to bind to port {port}: {e}")
+        raise RuntimeError(f"Failed to bind to port {port}: {e}") # questionable
 
     server_socket.setblocking(False)
 
     sel = selectors.DefaultSelector()
     sel.register(server_socket, selectors.EVENT_READ, data=functools.partial(handle_new_request, selector=sel))
 
-    print('server up')
+    print('Server up')
     try:
         while True:
             events = sel.select(timeout=1.0)
             for key, mask in events:
                 key.data(key.fileobj)
     except KeyboardInterrupt:
-        print('server down')
+        print('Server down')
         pass
     finally:
         sel.close()

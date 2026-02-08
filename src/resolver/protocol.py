@@ -78,7 +78,7 @@ class Serializable(ABC):
         pass
 
 @dataclass
-class DNSHeaderFlags:
+class DNSHeaderFlags(Serializable):
     # flags: 2 bytes combined
     qr: int = 0         # query: 1 bit
     opcode: int = 0     # opcode: 4 bits
@@ -89,7 +89,7 @@ class DNSHeaderFlags:
     z: int = 0          # reserved, 3 bits
     rcode: int = 0      # response code: 4 bits
 
-    def pack_flags(self) -> int:
+    def to_bytes(self) -> int:
         result = 0 # 2 bytes in total
         result |= (self.qr & 0x01) << 15        # mask 1 bit value with 0x01 = 00000001
         result |= (self.opcode & 0x0F) << 11    # mask 4 bit value with 0x0F = 00001111
@@ -102,7 +102,7 @@ class DNSHeaderFlags:
         return result
     
     @classmethod
-    def unpack_flags(cls, raw_int: int) -> DNSHeaderFlags:
+    def from_bytes(cls, raw_int: int) -> DNSHeaderFlags:
         qr = (raw_int >> 15) & 0x01
         opcode = (raw_int >> 11) & 0x0F
         aa = (raw_int >> 10) & 0x01
@@ -126,7 +126,7 @@ class DNSHeader(Serializable):
         return struct.pack(
             '!6H', # big endian, 12 bytes long (aka 6 unsigned shorts)
             self.id,
-            self.flags.pack_flags(),
+            self.flags.to_bytes(),
             self.qd_count,
             self.an_count,
             self.ns_count,
@@ -140,7 +140,7 @@ class DNSHeader(Serializable):
         unpacked_header = struct.unpack('!6H', header_bytes)
         id, flags_raw, qd_count, an_count, ns_count, ar_count = unpacked_header
 
-        flags = DNSHeaderFlags.unpack_flags(flags_raw)
+        flags = DNSHeaderFlags.from_bytes(flags_raw)
         
         return DNSHeader(id, flags, qd_count, an_count, ns_count, ar_count)
 
@@ -269,6 +269,6 @@ class DNSPacket(Serializable):
         return DNSPacket(header, questions, answers, authorities, additionals)
     
     @classmethod
-    def create_simple_error(cls, transaction_id: int, rcode: int = 1) -> DNSPacket:
+    def create_error(cls, transaction_id: int, rcode: int = 1) -> DNSPacket:
         header = DNSHeader(id=transaction_id, flags=DNSHeaderFlags(qr=1, rcode=rcode))
         return DNSPacket(header)
