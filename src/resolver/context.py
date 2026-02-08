@@ -99,9 +99,9 @@ class Context:
                 print('Server failure')
                 return
 
-        if not self.client_wants_recursion:
-            self.finish_resolution()
-            return
+        # if not self.client_wants_recursion:
+        #     self.finish_resolution()
+        #     return
         
         self.original_query.header.flags.rd = 0
         

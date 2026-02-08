@@ -8,6 +8,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 def encode_domain_name(domain_name: str) -> bytes:
+    if domain_name in ('.', ''):
+        return b'\x00'
+    
     encoded_bytes = b''
     labels = domain_name.strip('.').split('.') # remove leading/trailing full stops and create list of labels
 
@@ -205,6 +208,8 @@ class DNSRecord(Serializable):
             case 28 if rdlength == 16: # check for type AAAA: IPv6 address record
                 raw_rdata = reader.read(rdlength)
                 rdata = socket.inet_ntop(socket.AF_INET6, raw_rdata)
+            case 41:
+                rdata = str(reader.read(rdlength))
             case _:
                 raw_rdata = reader.read(rdlength)
                 rdata = raw_rdata.hex()
