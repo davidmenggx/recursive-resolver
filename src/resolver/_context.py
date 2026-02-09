@@ -1,14 +1,17 @@
+from __future__ import annotations
+
 import io
 import socket
 import struct
 import selectors
 from enum import Enum
 
-from protocol import DNSPacket, DNSRecord
+from resolver.dns_parser import DNSPacket, DNSRecord
 
 class ProcessingState(Enum):
     PROCESSING_MESSAGE = 'PROCESSING_MESSAGE'
     WAITING_FOR_RESPONSE = 'WAITING_FOR_RESPONSE'
+    WAITING_FOR_SUBQUERY = 'WAITING_FOR_SUBQUERY'
     FINISHED = 'FINISHED'
 
 class Context:
@@ -17,7 +20,8 @@ class Context:
             sel: selectors.BaseSelector, 
             server_sock: socket.socket,
             client_address: tuple[str, int], 
-            original_query: DNSPacket
+            original_query: DNSPacket,
+            parent_context: Context | None = None
             ) -> None:
         # Connection information:
         self.sel: selectors.BaseSelector = sel
@@ -42,6 +46,8 @@ class Context:
         self.depth = 0                                                  # Prevent infinite loops
 
         self.original_query.header.flags.rd = 0
+
+        self.parent_context = parent_context
 
     def process(self):
         match self.state:
@@ -79,6 +85,18 @@ class Context:
         for record in additional_records:
             if record.type_ == 1:
                 return record.rdata
+            if record.type_ == 2:
+                # Create a new subquery (difficult)
+                self.state = ProcessingState.WAITING_FOR_SUBQUERY
+                # CRITICAL: CHANGE THE QUESTION TO QUERY THE NEW NS
+                # subquery_packet = self.original_query
+                # subquery_packet.questions
+                subquery = Context(self.sel, self.server_sock, self.client_address, self.original_query, self)
+                subquery.depth = self.depth + 1
+                # MAKE SURE TO FIND A WAY TO YIELD AND STOP CURRENT RESPONSE
+            if record.type_ == 5: 
+                # CNAME: update question to include cname and reset nameserver back to root (and then check cache)
+                ...
         return '' # THIS NEEDS TO SUPPORT NS RECORDS AND IPV6
     
     def send_request_upstream(self):

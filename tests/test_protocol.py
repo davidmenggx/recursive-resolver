@@ -1,7 +1,7 @@
 import io
 import pytest
 
-from resolver.protocol import encode_domain_name, decode_domain_name, DNSHeaderFlags, DNSHeader, DNSQuestion, DNSRecord, DNSPacket
+from resolver.dns_parser import encode_domain_name, decode_domain_name, DNSHeaderFlags, DNSHeader, DNSQuestion, DNSRecord, DNSPacket
 
 # Encoder tests:
 def test_successful_encode():

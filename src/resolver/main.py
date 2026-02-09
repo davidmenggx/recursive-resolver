@@ -1,61 +1,23 @@
-import io
-import socket
-import struct
-import selectors
-import functools
+import asyncio
 
-from context import Context
-from protocol import DNSPacket
+from connection_protocols import ClientProtocol
 
-def handle_new_request(sock: socket.socket, selector: selectors.BaseSelector) -> None:
-    try:
-        data, addr = sock.recvfrom(512) # Standard limit for DNS packets is 512 bytes - RFC 1035
-        if not data:
-            return
-    
-        try:
-            dns_message = DNSPacket.from_bytes(io.BytesIO(data))
-        except (ValueError, struct.error, IndexError):
-            print('Request error!')
-            if len(data) >= 2:
-                transaction_id = struct.unpack('!H', data[:2])[0]
-                response = DNSPacket.create_error(transaction_id, rcode=1)
-                response = response.to_bytes()
-                sock.sendto(response, addr)
-            return
-        
-        request_context = Context(selector, sock, addr, dns_message)
-        request_context.process()
-    except Exception:
-        print('Unexpected exception, quietly dropping packet')
-        pass
-
-def main(ip: str = '127.0.0.1', port: int = 8053):
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    try:
-        server_socket.bind((ip, port))
-    except OSError as e:
-        raise RuntimeError(f"Failed to bind to port {port}: {e}") # questionable
-
-    server_socket.setblocking(False)
-
-    sel = selectors.DefaultSelector()
-    sel.register(server_socket, selectors.EVENT_READ, data=functools.partial(handle_new_request, selector=sel))
-
+async def main():
     print('Server up')
+    loop = asyncio.get_running_loop()
+
+    transport, protocol = await loop.create_datagram_endpoint(
+        lambda: ClientProtocol(),
+        local_addr=('127.0.0.1', 8053)
+    )
+
     try:
-        while True:
-            events = sel.select(timeout=1.0)
-            for key, mask in events:
-                key.data(key.fileobj)
-    except KeyboardInterrupt:
-        print('Server down')
+        await asyncio.Future() # Keep the server waiting forever
+    except asyncio.CancelledError:
         pass
     finally:
-        sel.close()
-        server_socket.close()
+        print("Server down")
+        transport.close()
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    asyncio.run(main())
