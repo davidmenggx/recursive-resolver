@@ -4,19 +4,14 @@ from copy import deepcopy
 from dns_parser import DNSPacket, DNSQuestion, DNSRecord
 
 def find_ip_in_records(records: list[DNSRecord], ns_name: str, recursive_response: bool = False) -> str:
-    if recursive_response: # clean this up lol
-        for record in records:
-            if record.type_ == 1:
-                return record.rdata
-    else:
-        for record in records:
-            if record.type_ == 1 and record.name == ns_name:
-                return record.rdata
+    for record in records:
+        if record.type_ == 1 and (recursive_response or record.name == ns_name):
+            return record.rdata
     return ''
 
 def construct_new_question(ns_name: str, packet: DNSPacket) -> DNSPacket:
     new_packet = deepcopy(packet)
-    new_packet.header.flags.rd = 0
+    new_packet.header.flags.rd = 0 # this is unneeded in theory but its good to manually unwind the recursion
     new_packet.header.id = random.randint(0, 65535)
     new_packet.questions = [DNSQuestion(ns_name)]
     return new_packet
