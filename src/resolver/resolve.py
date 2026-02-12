@@ -20,7 +20,7 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
     if not client_packet.questions: # make sure no malformed messages have reached this point
         return DNSPacket.create_error(client_packet.header.id, rcode=1)
     
-    current_nameservers: list[str] = ['198.41.0.4']
+    current_nameservers: list[str] = ['198.41.0.4'] # a.root-servers.net - Verisign
 
     while True:
         success = False
@@ -28,11 +28,12 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
             try:
                 response: DNSPacket = await send_query(client_packet, timeout=5, nameserver=server)
             except Exception:
-                continue
+                continue # if the current nameserver cannot be connected, keep trying other nameservers
 
             success = True
             
             if response.header.flags.rcode == 3:
+                # important: there needs to be a line here saving the nxdomain to cache to avoid future lookups
                 print('NXDOMAIN')
                 return DNSPacket.create_error(client_packet.header.id, rcode=3)
             
