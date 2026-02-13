@@ -22,6 +22,8 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
     
     current_nameservers: list[str] = ['198.41.0.4'] # a.root-servers.net - Verisign
 
+    current_zone = '.'
+    
     while True:
         success = False
         for server in current_nameservers:
@@ -67,7 +69,13 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
             
             if response.header.ns_count > 0 and response.authorities:
                 print('FOUND NAMESERVER(s)')
-                current_nameservers = await parse_nameservers(response, client_packet, depth)
+                current_nameservers = await parse_nameservers(
+                    response=response, 
+                    packet=client_packet, 
+                    current_zone=current_zone, 
+                    depth=depth
+                    )
+                current_zone = response.authorities[0].name
                 break
 
         if not success:
