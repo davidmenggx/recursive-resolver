@@ -4,29 +4,32 @@ import pytest
 from resolver.dns_parser import encode_domain_name, decode_domain_name, DNSHeaderFlags, DNSHeader, DNSQuestion, DNSRecord, DNSPacket
 
 # Encoder tests:
-def test_successful_encode():
-    domain = 'www.test.com'
-    expected_bytes = b'\x03www\x04test\x03com\x00'
-    expected_hex = '03 77 77 77 04 74 65 73 74 03 63 6f 6d 00'
+@pytest.mark.parametrize('valid_input,expected_bytes,expected_hex', [
+    ('www.test.com', b'\x03www\x04test\x03com\x00', '03 77 77 77 04 74 65 73 74 03 63 6f 6d 00'),
+    ('.', b'\x00', '00'), # Make sure that empty domain names evaluate to null
+    ('', b'\x00', '00')
+])
+def test_successful_encode(valid_input, expected_bytes, expected_hex):
+    assert encode_domain_name(valid_input) == expected_bytes
+    assert encode_domain_name(valid_input).hex(' ') == expected_hex
 
-    assert encode_domain_name(domain) == expected_bytes
-    assert encode_domain_name(domain).hex(' ') == expected_hex
-
-@pytest.mark.parametrize("invalid_input", [
+@pytest.mark.parametrize('invalid_input', [
     'www..test.com',
-    '',
-    'www.test.com' * 30
+    'www.test.com' * 30,            # domain name cannot be longer than 255 octets
+    'www.' + 'test' * 30 + '.com'   # label cannot be longer than 63 octets
 ])
 def test_failed_encode(invalid_input):
     with pytest.raises(ValueError):
         encode_domain_name(invalid_input)
 
 # Decoder tests:
-def test_successful_decode():
-    buffered_domain = b'\x03www\x04test\x03com\x00'
-    buffer = io.BytesIO(buffered_domain)
-    expected = 'www.test.com'
-
+@pytest.mark.parametrize('valid_input,expected', [
+    (b'\x03www\x04test\x03com\x00', 'www.test.com'),
+    (b'\x00', ''),
+    (b'\x03www\x00', 'www')
+])
+def test_successful_decode(valid_input, expected):
+    buffer = io.BytesIO(valid_input)
     assert decode_domain_name(buffer) == expected
 
 def test_compressed_decode():
@@ -37,44 +40,33 @@ def test_compressed_decode():
 
     assert decode_domain_name(buffer) == expected
 
-def test_compression_loop_decode():
-    malicious_domain = b'\xc0\x00'
-    buffer = io.BytesIO(malicious_domain)
+@pytest.mark.parametrize('invalid_input', [
+    b'\xc0\x00',                    # make sure pointer loop does not result in infinite recursion
+    b'\x65' + (b'w' * 65) + b'\x00' # label cannot be longer than 63 octets
+])
+def test_failed_decode(invalid_input):
+    buffer = io.BytesIO(invalid_input)
     
     with pytest.raises(ValueError):
         decode_domain_name(buffer)
 
-def test_empty_decode():
-    empty_domain = b'\x00'
-    buffer = io.BytesIO(empty_domain)
-    expected = ''
-
-    assert decode_domain_name(buffer) == expected
-
-def test_single_label_decode():
-    single_label_domain = b'\x03www\x00'
-    buffer = io.BytesIO(single_label_domain)
-    expected = 'www'
-
-    assert decode_domain_name(buffer) == expected
-
 # DNSHeaderFlags tests:
 @pytest.mark.parametrize('qr,opcode,rcode,expected', [
-    (1, 0, 0, 0x8000),
-    (0, 4, 0, 0x2000),
-    (0, 0, 3, 0x0003),
+    (1, 0, 0, 0x8080),
+    (0, 4, 0, 0x2080),
+    (0, 0, 3, 0x0083),
 ])
 def test_valid_flag_pack(qr, opcode, rcode, expected):
     f = DNSHeaderFlags(qr=qr, opcode=opcode, rcode=rcode)
-    assert f.pack_flags() == expected
+    assert f.to_bytes() == expected
 
 @pytest.mark.parametrize('raw_int,expected', [
-    (0x8000, DNSHeaderFlags(qr=1, opcode=0, rcode=0)),
-    (0x2000, DNSHeaderFlags(qr=0, opcode=4, rcode=0)),
-    (0x0003, DNSHeaderFlags(qr=0, opcode=0, rcode=3))
+    (0x8080, DNSHeaderFlags(qr=1, opcode=0, rcode=0)),
+    (0x2080, DNSHeaderFlags(qr=0, opcode=4, rcode=0)),
+    (0x0083, DNSHeaderFlags(qr=0, opcode=0, rcode=3))
 ])
 def test_valid_flag_unpack(raw_int, expected):
-    assert DNSHeaderFlags.unpack_flags(raw_int=raw_int) == expected # __eq__ is supported because DNSHeaderFlags is a dataclass
+    assert DNSHeaderFlags.from_bytes(raw_int=raw_int) == expected # __eq__ is supported because DNSHeaderFlags is a dataclass
 
 # DNSHeader tests:
 def test_valid_header_to_bytes():
@@ -257,3 +249,12 @@ def test_valid_long_message_from_bytes():
     )
 
     assert DNSPacket.from_bytes(buffer) == expected
+
+def test_error_message(): 
+    expected = DNSPacket(header=DNSHeader(
+        id=1, 
+        flags=DNSHeaderFlags(qr=1, opcode=0, aa=0, tc=0, rd=0, ra=1, z=0, rcode=1), 
+        qd_count=0, an_count=0, ns_count=0, ar_count=0), 
+        questions=[], answers=[], authorities=[], additionals=[]
+        )
+    assert DNSPacket.create_error(transaction_id=1, rcode=1) == expected
