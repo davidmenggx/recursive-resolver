@@ -51,7 +51,7 @@ async def parse_nameservers(response: DNSPacket, packet: DNSPacket, current_zone
                         result.append(ip)
     return result
 
-async def send_query(packet: DNSPacket, nameserver: str, timeout: float = 5) -> DNSPacket:
+async def send_query(packet: DNSPacket, nameserver: str, timeout: float = 5):
     from connection_protocols import UpstreamProtocol
     loop = asyncio.get_running_loop()
 
@@ -60,10 +60,10 @@ async def send_query(packet: DNSPacket, nameserver: str, timeout: float = 5) -> 
     transport, protocol = await loop.create_datagram_endpoint(
         lambda: UpstreamProtocol(packet, future, nameserver),
         remote_addr=(nameserver, 53)
-        )
+        ) # No local addr specified so server chooses random ephemeral port : prevent kaminsky attack
     try:
-        result: DNSPacket = await asyncio.wait_for(future, timeout)
-        return result
+        result, upstream_addr = await asyncio.wait_for(future, timeout)
+        return result, upstream_addr
     finally:
         transport.close()
 
@@ -91,11 +91,19 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
         success = False
         for server in current_nameservers:
             try:
-                response: DNSPacket = await send_query(client_packet, timeout=5, nameserver=server)
+                response, upstream_addr = await send_query(client_packet, timeout=5, nameserver=server)
             except Exception:
                 continue # if the current nameserver cannot be connected, keep trying other nameservers
 
             success = True
+
+            if upstream_addr[0] != server: # make sure that the source IP matches expected
+                print('UPSTREAM RESPONSE DOES NOT MATCH REQUESTED SERVER, DROPPING')
+                continue
+
+            if client_packet.header.id != response.header.id: # make sure that the transaction ID matches expected
+                print('HEADER ID MISMATCH, DROPPING')
+                continue
             
             if response.header.flags.rcode == 3:
                 # important: there needs to be a line here saving the nxdomain to cache to avoid future lookups

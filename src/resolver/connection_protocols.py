@@ -68,9 +68,10 @@ class UpstreamProtocol(asyncio.DatagramProtocol):
     
     @override
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
+        print(f'Datagram received: {addr}')
         try:
             response = DNSPacket.from_bytes(io.BytesIO(data))
-            self.future.set_result(response)
+            self.future.set_result((response, addr))
         except Exception:
             self.future.set_exception(ValueError("Bad upstream packet"))
         
