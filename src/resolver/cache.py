@@ -9,7 +9,7 @@ class NodeEdge(NamedTuple):
 
 class TrieNode:
     def __init__(self, is_leaf: bool = False):
-        self.children: dict[str, NodeEdge] = {}
+        self.children: dict[str, NodeEdge] = {} # Maps first character : (full edge string, node object)
         self.is_leaf: bool = is_leaf
 
 class RadixTrie:
@@ -53,8 +53,21 @@ class RadixTrie:
 
                 return
 
-    def search(self, key: str):
-        ...
+    def search(self, key: str) -> bool:
+        curr = self.root
+        while key:
+            if key[0] not in curr.children:
+                return False
+            
+            prefix = os.path.commonprefix([key, curr.children[key[0]].edge])
+
+            if curr.children[key[0]].edge != prefix:
+                return False
+            
+            curr = curr.children[key[0]].node
+            key = key[len(prefix):]
+        
+        return curr.is_leaf
     
     def delete(self, key: str) -> None:
         ...
