@@ -70,4 +70,28 @@ class RadixTrie:
         return curr.is_leaf
     
     def delete(self, key: str) -> None:
-        ...
+        if not self.search(key):
+            return
+        
+        traversal_history = [] # stack to store previously visited nodes for merging
+
+        curr = self.root
+        while key:
+            prefix = os.path.commonprefix([key, curr.children[key[0]].edge]) # maybe refactor this so its shorter since I don't need to calculate the entire prefix
+            
+            curr = curr.children[key[0]].node
+            key = key[len(prefix):]
+
+if __name__ == '__main__':
+    tree = RadixTrie()
+
+    tree.insert("test")
+    tree.insert("apple")
+
+    print(tree.search("test"))
+    print(tree.search("apple"))
+    print(tree.search("unknown"))
+
+    tree.insert("teamwork")
+
+    print(tree.search("team"))
