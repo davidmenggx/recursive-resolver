@@ -3,6 +3,7 @@ import asyncio
 from copy import deepcopy
 
 from dns_parser import DNSPacket, DNSQuestion, DNSRecord
+from cache import DNSCache
 
 def find_ip_in_records(records: list[DNSRecord], ns_name: str, recursive_response: bool = False) -> str:
     for record in records:
@@ -83,6 +84,11 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
     if not client_packet.questions: # make sure no malformed messages have reached this point
         return DNSPacket.create_error(client_packet.header.id, rcode=1)
     
+    # check cache here
+    if cache_result := DNSCache.get(client_packet.questions[0].qname, client_packet.questions[0].qtype):
+        print('CACHE HIT')
+        return cache_result
+    
     current_nameservers: list[str] = ['198.41.0.4'] # a.root-servers.net - Verisign
 
     current_zone = '.'
@@ -108,7 +114,10 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
             if response.header.flags.rcode == 3:
                 # important: there needs to be a line here saving the nxdomain to cache to avoid future lookups
                 print('NXDOMAIN')
-                return DNSPacket.create_error(client_packet.header.id, rcode=3)
+                print('ADDING NXDOMAIN RESPONSE TO CACHE')
+                nxdomain_packet = DNSPacket.create_error(client_packet.header.id, rcode=3)
+                DNSCache.put(client_packet.questions[0].qname, client_packet.questions[0].qtype, nxdomain_packet)
+                return nxdomain_packet
             
             if response.header.flags.rcode != 0:
                 print('ERROR! Server failure!')
@@ -118,7 +127,6 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
                 print('FOUND POTENTIAL ANSWER!')
                 if verify_final_answer(response, client_packet.questions[0].qtype): # make sure that indexing like this is safe
                     print('FOUND FINAL ANSWER!')
-                    return response
                 else:
                     # make sure that we look down the new correct type for response here
                     cname_record = next((ans for ans in response.answers if ans.type_ == 5), None)
@@ -135,8 +143,10 @@ async def resolve(client_packet: DNSPacket, depth: int  = 0) -> DNSPacket:
                         
                         for answer in final_ip_packet.answers:
                             response.answers.append(answer)
-                        
-                        return response
+
+                print('ADDING RESPONSE TO CACHE')
+                DNSCache.put(client_packet.questions[0].qname, client_packet.questions[0].qtype, response)
+                return response
             
             if response.header.ns_count > 0 and response.authorities:
                 print('FOUND NAMESERVER(s)')
